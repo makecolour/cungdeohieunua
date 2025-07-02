@@ -1,0 +1,23 @@
+WEAPONS,,,,,,,,,,,,,,,,
+STT,Name,ID,Type,Độ hiếm (%),On-pickup points,On-hit points,Cooldown (step),Số lần sử dụng,Damage,Range (cell),Phạm vi nổ (cell),Tầm đánh,Tốc độ đạn (cell/s),Effect,Mô tả,Hình ảnh 
+1,Dao,KNIFE,Melees,25,35,30,3,-,30,3*1,-,Gần,-,-,,Dao.png
+2,Cành cây,TREE_BRANCH,Melees,25,45,15,2,-,15,3*1,-,Gần,-,-,,cành cây.png
+3,Tay không,HAND,Melees,-,0,5,1,-,5,1*1,-,Gần,-,-,,
+4,Xương,BONE,Melees,25,40,30,4,-,30,1*1,-,Gần,-,-,,xương.png
+5,Rìu,AXE,Melees,25,30,40,5,-,40,3*1,-,Gần,-,-,,rìu.png
+6,Quyền trượng,SCEPTER,Guns,25,30,20,3,10,20,1*12,-,Xa,6,-,,
+7,Nỏ,CROSSBOW,Guns,25,30,30,4,6,30,1*8,-,Xa,4,-,,nỏ.png
+8,Ná cao su,RUBBER_GUN,Guns,25,40,15,2,8,15,1*6,-,Xa,4,-,,ná cao su.png
+9,Shotgun,SHOTGUN,Guns,25,20,45,8,4,45,1*2,-,Xa,8,-,,
+10,Chuối,BANANA,Throwables,20,35,30,4,2,30,1*6,3*3,Xa,6,-,Khi phát nổ xong quả chuối nguyên vẹn bị biến thảnh vỏ chuối. Nếu trong ô đó có vỏ chuối r thì chỉ tính là có 1 vỏ chuối.,chuối.png
+11,Bom khói,SMOKE,Throwables,20,50,0,-,1,0,1*3,7*7,Trung,6,"- Mù trong 7*7
+- Mất hiện diện","Tạo ra 1 làn khói phạm vi 7*7 trong 10s, hero đứng ở trong khói sẽ bị mù và mất hiện diện (không hero nào nhìn thấy người trong khói)",bom khói.png
+12,Mảnh thiên thạch ,METEORITE_FRAGMENT,Throwables,20,35,35,4,2,35,1*6,3*3,Xa,6,-,,mảnh thiên thạch.png
+13,Tinh thể,CRYSTAL,Throwables,20,30,45,4,2,45,1*6,3*3,Xa,6,-,,tinh thể.png
+14,Hạt,SEED,Throwables,20,50,20,8,2,20,1*5,3*3,Xa,6,- Stun 1s,Tại vị trí nổ sẽ gây choáng Hero,hạt.png
+15,Chuỳ gai,MACE,Melees,Có trong thính,60,60,10,2,60,3*3,-,Trung,-,Stun 1s, Đánh ra phía trước mặt 3*3 cell (hình quạt),chuỳ gai.png
+16,Dây thừng,ROPE,Specials,33.3,50,15,20,2,15,1*6,-,Xa,12,"- Kéo
+- Stun 1s","Kéo Hero về phía trước mặt mình 1 cell, stun 1s hoặc kéo mình về phía obstacle có tag ""Pullable rope"", NPC (kéo như nào sẽ phụ thuộc đích đến của dây thừng)",dây thừng.png
+17,Chuông,BELL,Specials,33.3,60,15,-,1,15,7*7,-,Xa,-,- Reverse 10s,Đảo ngược di chuyển toàn bộ hero trong khu vực 7*7 trong 10s (mình là tâm) (bản thân không bị ảnh hưởng),chuông.png
+18,Gậy đánh bóng (giống gậy Sahur),SAHUR_BAT,Specials,33.3,50,20,20,3,20,1*5,-,Xa,5,"- Knock back 3 cell
+(Stun 2s)","Đánh bóng trúng sẽ đẩy lùi Hero 3 Cell, nếu va phải obstacle có tag "" Hero hit by bat will be stunned"", Hero, Npc sẽ bị choáng 2s",gậy đánh bóng.png
