@@ -19,7 +19,7 @@ import java.util.*;
 
 public class Main {
     private static final String SERVER_URL = "https://cf25-server.jsclub.dev";
-    private static final String GAME_ID = "184039";
+    private static final String GAME_ID = "144303";
     private static final String PLAYER_NAME = "CF25_7_Bot_1";
     private static final String SECRET_KEY = "sk-eSunLDmNS62xXXzTLsCJ5Q:BJxVPCkOkfr-pJO82lz96wbdiKIfApuopCAPDLQBJASWFCC0h39RZ6dMQnw4fvNVVh-Jqvvz2HdgvW95U6gtQA";
 
@@ -115,31 +115,94 @@ class IntelligentBotListener implements Emitter.Listener {
             String weaponType = parts[1];
             String direction = parts[2];
             
+            // Check if we're attacking a chest or enemy
+            Player target = findTargetInDirection(direction);
+            Obstacle chest = findChestInDirection(direction);
+            
             switch (weaponType) {
                 case "gun":
                     if (gameState.inventory.getGun() != null) {
-                        hero.shoot(direction);
+                        int gunRange = getGunWeaponRange(gameState.inventory.getGun());
+                        if (target != null) {
+                            int distance = PathUtils.distance(gameState.player, target);
+                            if (distance <= gunRange) {
+                                hero.shoot(direction);
+                                System.out.println("Shooting at enemy with gun (range: " + gunRange + ") at distance " + distance);
+                            } else {
+                                System.out.println("Enemy too far for gun - distance: " + distance + ", range: " + gunRange);
+                            }
+                        } else if (chest != null) {
+                            int distance = PathUtils.distance(gameState.player, chest);
+                            if (distance <= gunRange) {
+                                hero.shoot(direction);
+                                System.out.println("Shooting at chest with gun (range: " + gunRange + ") at distance " + distance);
+                            } else {
+                                System.out.println("Chest too far for gun - distance: " + distance + ", range: " + gunRange);
+                            }
+                        } else {
+                            hero.shoot(direction);
+                        }
                     }
                     break;
                 case "melee":
-                    hero.attack(direction);
+                    if (gameState.inventory.getMelee() != null) {
+                        int meleeRange = getMeleeWeaponRange(gameState.inventory.getMelee());
+                        if (target != null) {
+                            int distance = PathUtils.distance(gameState.player, target);
+                            if (distance <= meleeRange) {
+                                hero.attack(direction);
+                                System.out.println("Attacking enemy with melee weapon (range: " + meleeRange + ") at distance " + distance);
+                            } else {
+                                System.out.println("Enemy too far for melee weapon - distance: " + distance + ", range: " + meleeRange);
+                            }
+                        } else if (chest != null) {
+                            int distance = PathUtils.distance(gameState.player, chest);
+                            if (distance <= meleeRange) {
+                                hero.attack(direction);
+                                System.out.println("Attacking chest with melee weapon (range: " + meleeRange + ") at distance " + distance);
+                            } else {
+                                System.out.println("Chest too far for melee weapon - distance: " + distance + ", range: " + meleeRange);
+                            }
+                        } else {
+                            hero.attack(direction);
+                        }
+                    }
                     break;
                 case "throwable":
                     if (gameState.inventory.getThrowable() != null) {
-                        Player target = findTargetInDirection(direction);
+                        int throwableRange = getThrowableWeaponRange(gameState.inventory.getThrowable());
                         if (target != null) {
                             int distance = PathUtils.distance(gameState.player, target);
-                            hero.throwItem(direction, Math.min(distance, gameState.inventory.getThrowable().getRange()));
+                            if (distance <= throwableRange) {
+                                hero.throwItem(direction, Math.min(distance, throwableRange));
+                                System.out.println("Throwing at enemy (range: " + throwableRange + ") at distance " + distance);
+                            } else {
+                                System.out.println("Enemy too far for throwable - distance: " + distance + ", range: " + throwableRange);
+                            }
+                        } else if (chest != null) {
+                            int distance = PathUtils.distance(gameState.player, chest);
+                            if (distance <= throwableRange) {
+                                hero.throwItem(direction, Math.min(distance, throwableRange));
+                                System.out.println("Throwing at chest (range: " + throwableRange + ") at distance " + distance);
+                            } else {
+                                System.out.println("Chest too far for throwable - distance: " + distance + ", range: " + throwableRange);
+                            }
                         }
                     }
                     break;
                 case "special":
                     if (gameState.inventory.getSpecial() != null) {
                         hero.useSpecial(direction);
+                        if (chest != null) {
+                            System.out.println("Using special weapon on chest in direction " + direction);
+                        }
                     }
                     break;
                 default:
                     hero.attack(direction);
+                    if (chest != null) {
+                        System.out.println("Default attacking chest in direction " + direction);
+                    }
                     break;
             }
             System.out.println("Executing attack: " + weaponType + " in direction " + direction);
@@ -159,6 +222,7 @@ class IntelligentBotListener implements Emitter.Listener {
     }
     
     private Player findTargetInDirection(String direction) {
+        // First check for enemy players
         for (Player enemy : gameState.getNearbyEnemies()) {
             String enemyDirection = calculateAttackDirection(gameState.player, enemy);
             if (enemyDirection.equals(direction)) {
@@ -166,6 +230,91 @@ class IntelligentBotListener implements Emitter.Listener {
             }
         }
         return null;
+    }
+    
+    private Obstacle findChestInDirection(String direction) {
+        // Check for chests in the specified direction within weapon range
+        for (Obstacle chest : gameState.gameMap.getListChests()) {
+            int distance = PathUtils.distance(gameState.player, chest);
+            int maxWeaponRange = getMaxAvailableWeaponRange();
+            
+            if (distance <= maxWeaponRange) {
+                String chestDirection = calculateDirectionToTarget(gameState.player, chest);
+                if (chestDirection.equals(direction)) {
+                    System.out.println("Found chest at distance " + distance + " in direction " + direction + 
+                                     ", type: " + chest.getType() + " (max weapon range: " + maxWeaponRange + ")");
+                    return chest;
+                }
+            }
+        }
+        System.out.println("No chest found in direction " + direction + " within weapon range");
+        return null;
+    }
+    
+    /**
+     * Get the maximum attack range of all available weapons
+     */
+    private int getMaxAvailableWeaponRange() {
+        int maxRange = 1; // Default melee range
+        
+        if (gameState.inventory.getGun() != null) {
+            maxRange = Math.max(maxRange, getGunWeaponRange(gameState.inventory.getGun()));
+        }
+        if (gameState.inventory.getMelee() != null) {
+            maxRange = Math.max(maxRange, getMeleeWeaponRange(gameState.inventory.getMelee()));
+        }
+        if (gameState.inventory.getThrowable() != null) {
+            maxRange = Math.max(maxRange, getThrowableWeaponRange(gameState.inventory.getThrowable()));
+        }
+        if (gameState.inventory.getSpecial() != null) {
+            // Special weapons vary in range - estimate based on type
+            String specialId = gameState.inventory.getSpecial().getId();
+            if ("ROPE".equals(specialId)) {
+                maxRange = Math.max(maxRange, 6); // ROPE has 1*6 range
+            } else {
+                maxRange = Math.max(maxRange, 3); // Default special range
+            }
+        }
+        
+        return maxRange;
+    }
+    
+    private String calculateDirectionToTarget(Node from, Node to) {
+        int dx = to.getX() - from.getX();
+        int dy = to.getY() - from.getY();
+        
+        // Improved direction calculation to be more precise
+        if (Math.abs(dx) == 0 && Math.abs(dy) == 0) {
+            return ""; // Same position
+        }
+        
+        if (Math.abs(dx) > Math.abs(dy)) {
+            return dx > 0 ? "r" : "l";
+        } else {
+            return dy > 0 ? "u" : "d";
+        }
+    }
+    
+    private String calculateAttackDirection(Node from, Node to) {
+        // More precise attack direction calculation
+        int dx = to.getX() - from.getX();
+        int dy = to.getY() - from.getY();
+        
+        // Handle diagonal cases better
+        if (dx == 0 && dy == 0) return "";
+        
+        // Prioritize the axis with greater difference
+        if (Math.abs(dx) > Math.abs(dy)) {
+            return dx > 0 ? "r" : "l";
+        } else if (Math.abs(dy) > Math.abs(dx)) {
+            return dy > 0 ? "u" : "d";
+        } else {
+            // Equal distance - choose based on preference or context
+            if (dx > 0) return "r";
+            if (dx < 0) return "l";
+            if (dy > 0) return "u";
+            return "d";
+        }
     }
 
     private void handleEmergencySituation() throws IOException {
@@ -380,17 +529,6 @@ class IntelligentBotListener implements Emitter.Listener {
         }
     }
 
-    private String calculateAttackDirection(Player from, Player to) {
-        int dx = to.getX() - from.getX();
-        int dy = to.getY() - from.getY();
-        
-        if (Math.abs(dx) > Math.abs(dy)) {
-            return dx > 0 ? "r" : "l";
-        } else {
-            return dy > 0 ? "u" : "d";
-        }
-    }
-
     private Armor findBetterArmorAt(Node position) {
         for (Armor armor : gameState.gameMap.getListArmors()) {
             if (armor.getX() == position.getX() && armor.getY() == position.getY()) {
@@ -408,6 +546,120 @@ class IntelligentBotListener implements Emitter.Listener {
         }
         return null;
     }
+
+    private Obstacle findNearbyChest(GameState gameState) {
+        List<Obstacle> chests = gameState.gameMap.getListChests();
+        Obstacle bestChest = null;
+        int minDistance = Integer.MAX_VALUE;
+        
+        for (Obstacle chest : chests) {
+            int distance = PathUtils.distance(gameState.player, chest);
+            if (distance <= 8 && distance < minDistance) {
+                minDistance = distance;
+                bestChest = chest;
+            }
+        }
+        
+        return bestChest;
+    }
+    
+    /**
+     * Debug method to test chest attack logic
+     */
+    private void debugChestAttack() {
+        try {
+            GameMap gameMap = hero.getGameMap();
+            if (gameMap != null) {
+                Player player = gameMap.getCurrentPlayer();
+                if (player != null) {
+                    System.out.println("=== CHEST DEBUG ===");
+                    System.out.println("Player position: (" + player.getX() + "," + player.getY() + ")");
+                    
+                    List<Obstacle> chests = gameMap.getListChests();
+                    System.out.println("Total chests on map: " + chests.size());
+                    
+                    for (Obstacle chest : chests) {
+                        int distance = PathUtils.distance(player, chest);
+                        System.out.println("Chest " + chest.getId() + " at (" + chest.getX() + "," + chest.getY() + 
+                                         "), distance: " + distance);
+                        
+                        if (distance <= 5) {
+                            String direction = calculateDirectionToTarget(player, chest);
+                            System.out.println("  -> Can attack in direction: " + direction);
+                        }
+                    }
+                    System.out.println("=== END CHEST DEBUG ===");
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Debug error: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Get the attack range for a melee weapon based on weapon data from CSV
+     */
+    private int getMeleeWeaponRange(Weapon meleeWeapon) {
+        if (meleeWeapon == null) return 1;
+        
+        String weaponId = meleeWeapon.getId();
+        switch (weaponId) {
+            case "KNIFE":
+            case "TREE_BRANCH":
+            case "AXE":
+                return 3; // 3*1 range
+            case "MACE":
+                return 3; // 3*3 range (diagonal distance)
+            case "HAND":
+            case "BONE":
+                return 1; // 1*1 range
+            default:
+                return 2; // Default safe range for unknown weapons
+        }
+    }
+    
+    /**
+     * Get the attack range for a gun weapon
+     */
+    private int getGunWeaponRange(Weapon gunWeapon) {
+        if (gunWeapon == null) return 6;
+        
+        String weaponId = gunWeapon.getId();
+        switch (weaponId) {
+            case "SCEPTER":
+                return 12; // 1*12 range
+            case "CROSSBOW":
+                return 8; // 1*8 range
+            case "RUBBER_GUN":
+                return 6; // 1*6 range
+            case "SHOTGUN":
+                return 2; // 1*2 range
+            default:
+                return 6; // Default gun range
+        }
+    }
+    
+    /**
+     * Get the attack range for a throwable weapon
+     */
+    private int getThrowableWeaponRange(Weapon throwableWeapon) {
+        if (throwableWeapon == null) return 5;
+        
+        String weaponId = throwableWeapon.getId();
+        switch (weaponId) {
+            case "BANANA":
+            case "METEORITE_FRAGMENT":
+            case "CRYSTAL":
+                return 6; // 1*6 range
+            case "SEED":
+                return 5; // 1*5 range
+            case "SMOKE":
+                return 3; // 1*3 range
+            default:
+                return 5; // Default throwable range
+        }
+    }
+
 }
 
 /**
@@ -505,44 +757,203 @@ class GameState {
  * Threat Assessment Class using Machine Learning-inspired scoring
  */
 class ThreatAssessment {
+    private static final Map<String, NPCThreatInfo> NPC_THREAT_DATA = new HashMap<>();
+    
+    static {
+        initializeNPCThreatData();
+    }
+    
+    private static void initializeNPCThreatData() {
+        // Based on NPCS.csv data - attack range is 3x3 for most NPCs
+        NPC_THREAT_DATA.put("NATIVE", new NPCThreatInfo(3, 2, 10, false));
+        NPC_THREAT_DATA.put("GHOST", new NPCThreatInfo(3, 2, 10, false));
+        NPC_THREAT_DATA.put("LEOPARD", new NPCThreatInfo(3, 2, 5, false)); // Bleed effect
+        NPC_THREAT_DATA.put("ANACONDA", new NPCThreatInfo(3, 2, 5, false)); // Poison effect
+        NPC_THREAT_DATA.put("RHINO", new NPCThreatInfo(3, 2, 15, false));
+        NPC_THREAT_DATA.put("GOLEM", new NPCThreatInfo(3, 2, 15, false)); // Stun effect
+        NPC_THREAT_DATA.put("SPIRIT", new NPCThreatInfo(3, 2, 0, true)); // Friendly - heals
+    }
+    
     public List<Node> getImmediateThreats(GameState gameState) {
         List<Node> threats = new ArrayList<>();
         
-        // Assess enemies
-        for (Enemy enemy : gameState.gameMap.getListEnemies()) {
-            if (PathUtils.distance(gameState.player, enemy) <= 5) {
-                threats.add(enemy);
+        // Calculate NPC danger zones based on their movement patterns and attack ranges
+        for (Enemy npc : gameState.gameMap.getListEnemies()) {
+            List<Node> dangerZone = calculateNPCDangerZone(npc, gameState);
+            threats.addAll(dangerZone);
+            System.out.println("NPC " + npc.getId() + " at (" + npc.getX() + "," + npc.getY() + ") creates " + dangerZone.size() + " danger cells");
+        }
+        
+        // Add player threats with weapon ranges
+        for (Player enemy : gameState.gameMap.getOtherPlayerInfo()) {
+            if (enemy.getHealth() > 0) {
+                List<Node> playerDangerZone = calculatePlayerDangerZone(enemy, 8); // Assume max weapon range
+                threats.addAll(playerDangerZone);
             }
         }
         
-        // Assess other players
-        for (Player otherPlayer : gameState.gameMap.getOtherPlayerInfo()) {
-            if (otherPlayer.getHealth() > 0 && PathUtils.distance(gameState.player, otherPlayer) <= 6) {
-                threats.add(otherPlayer);
-            }
-        }
-        
+        System.out.println("Total threat cells calculated: " + threats.size());
         return threats;
+    }
+    
+    private List<Node> calculateNPCDangerZone(Enemy npc, GameState gameState) {
+        Set<Node> dangerZone = new HashSet<>(); // Use Set to avoid duplicates
+        NPCThreatInfo threatInfo = NPC_THREAT_DATA.get(npc.getId());
+        
+        if (threatInfo == null) {
+            // Unknown NPC, assume basic threat with 3x3 attack range
+            threatInfo = new NPCThreatInfo(3, 2, 10, false);
+        }
+        
+        // Skip friendly NPCs (SPIRIT heals us)
+        if (threatInfo.isFriendly) {
+            return new ArrayList<>();
+        }
+        
+        int attackRange = threatInfo.attackRange; // 3x3 = 3
+        int speed = threatInfo.speed; // 2 cells per step
+        int movementDistance = 9; // NPCs move 9 cells total as mentioned by user
+        
+        // Model linear movement in one direction (we don't know which direction, so consider worst case)
+        // The danger zone will be: movement line (9 cells) × attack width (3 cells) + extensions at ends
+        
+        // For simplicity, assume NPC moves horizontally (worst case for path planning)
+        // Create danger zone: 9 cells long × 3 cells wide, plus 1-cell extensions at both ends
+        
+        int halfAttackRange = (attackRange - 1) / 2; // 1 cell on each side of center
+        
+        // Main movement corridor: 9 cells long × 3 cells wide
+        for (int pathStep = 0; pathStep < movementDistance; pathStep++) {
+            for (int sideOffset = -halfAttackRange; sideOffset <= halfAttackRange; sideOffset++) {
+                // For horizontal movement
+                int dangerX = npc.getX() + pathStep - (movementDistance / 2); // Center the path around NPC
+                int dangerY = npc.getY() + sideOffset;
+                
+                if (isValidPosition(dangerX, dangerY, gameState)) {
+                    dangerZone.add(new Node(dangerX, dangerY));
+                }
+                
+                // Also consider vertical movement possibility
+                int dangerX2 = npc.getX() + sideOffset;
+                int dangerY2 = npc.getY() + pathStep - (movementDistance / 2);
+                
+                if (isValidPosition(dangerX2, dangerY2, gameState)) {
+                    dangerZone.add(new Node(dangerX2, dangerY2));
+                }
+            }
+        }
+        
+        // Add 1-cell extensions at the start and end of movement line
+        // These account for attack range extending beyond the movement path
+        int extensionLength = 1;
+        
+        // Extensions for horizontal movement
+        for (int ext = 1; ext <= extensionLength; ext++) {
+            for (int sideOffset = -halfAttackRange; sideOffset <= halfAttackRange; sideOffset++) {
+                // Extension at start of path
+                int startX = npc.getX() - (movementDistance / 2) - ext;
+                int startY = npc.getY() + sideOffset;
+                if (isValidPosition(startX, startY, gameState)) {
+                    dangerZone.add(new Node(startX, startY));
+                }
+                
+                // Extension at end of path
+                int endX = npc.getX() + (movementDistance / 2) + ext;
+                int endY = npc.getY() + sideOffset;
+                if (isValidPosition(endX, endY, gameState)) {
+                    dangerZone.add(new Node(endX, endY));
+                }
+            }
+        }
+        
+        // Extensions for vertical movement
+        for (int ext = 1; ext <= extensionLength; ext++) {
+            for (int sideOffset = -halfAttackRange; sideOffset <= halfAttackRange; sideOffset++) {
+                // Extension at start of path
+                int startX = npc.getX() + sideOffset;
+                int startY = npc.getY() - (movementDistance / 2) - ext;
+                if (isValidPosition(startX, startY, gameState)) {
+                    dangerZone.add(new Node(startX, startY));
+                }
+                
+                // Extension at end of path
+                int endX = npc.getX() + sideOffset;
+                int endY = npc.getY() + (movementDistance / 2) + ext;
+                if (isValidPosition(endX, endY, gameState)) {
+                    dangerZone.add(new Node(endX, endY));
+                }
+            }
+        }
+        
+        return new ArrayList<>(dangerZone);
+    }
+    
+    private List<Node> calculatePlayerDangerZone(Player enemy, int maxWeaponRange) {
+        List<Node> dangerZone = new ArrayList<>();
+        
+        // Players can attack in cardinal directions within weapon range
+        // Add danger zones for different weapon types
+        int[] dx = {0, 0, 1, -1}; // up, down, right, left
+        int[] dy = {1, -1, 0, 0};
+        
+        for (int dir = 0; dir < 4; dir++) {
+            for (int range = 1; range <= maxWeaponRange; range++) {
+                int dangerX = enemy.getX() + (dx[dir] * range);
+                int dangerY = enemy.getY() + (dy[dir] * range);
+                dangerZone.add(new Node(dangerX, dangerY));
+            }
+        }
+        
+        return dangerZone;
+    }
+    
+    private boolean isValidPosition(int x, int y, GameState gameState) {
+        int mapSize = gameState.gameMap.getMapSize();
+        return x >= 0 && x < mapSize && y >= 0 && y < mapSize;
     }
 
     public double calculateThreatLevel(Node threat, GameState gameState) {
-        double threatLevel = 0;
-        int distance = PathUtils.distance(gameState.player, threat);
+        double level = 0.0;
         
-        // Base threat decreases with distance
-        threatLevel = 100.0 / (distance + 1);
-        
-        // Increase threat if it's a player (more dangerous than NPCs)
-        if (threat instanceof Player) {
-            threatLevel *= 1.5;
+        // Calculate threat from NPCs based on their actual damage and attack ranges
+        for (Enemy npc : gameState.gameMap.getListEnemies()) {
+            double distance = PathUtils.distance(threat, npc);
+            NPCThreatInfo threatInfo = NPC_THREAT_DATA.get(npc.getId());
+            
+            if (threatInfo != null && !threatInfo.isFriendly) {
+                // Higher threat if within attack range
+                if (distance <= threatInfo.attackRange) {
+                    level += threatInfo.damage * 2.0; // Double threat if in attack range
+                } else {
+                    level += threatInfo.damage / Math.max(1, distance - threatInfo.attackRange);
+                }
+            }
         }
         
-        // Increase threat if we're low on health
-        if (gameState.player.getHealth() < 50) {
-            threatLevel *= 1.3;
+        // Calculate threat from enemy players
+        for (Player enemy : gameState.gameMap.getOtherPlayerInfo()) {
+            if (enemy.getHealth() > 0) {
+                double distance = PathUtils.distance(threat, enemy);
+                double playerThreat = (enemy.getHealth() / 100.0) * 50; // Assume average weapon damage
+                level += playerThreat / Math.max(1, distance);
+            }
         }
         
-        return threatLevel;
+        return level;
+    }
+    
+    private static class NPCThreatInfo {
+        final int attackRange;
+        final int speed;
+        final int damage;
+        final boolean isFriendly;
+        
+        NPCThreatInfo(int attackRange, int speed, int damage, boolean isFriendly) {
+            this.attackRange = attackRange;
+            this.speed = speed;
+            this.damage = damage;
+            this.isFriendly = isFriendly;
+        }
     }
 }
 
@@ -726,39 +1137,65 @@ class PathOptimizer {
     
     private List<Node> generateNodesToAvoid(GameState gameState) {
         List<Node> avoid = new ArrayList<>();
+        
+        // Add static obstacles that can't be passed through
         avoid.addAll(gameState.gameMap.getListIndestructibles());
         avoid.removeAll(gameState.gameMap.getObstaclesByTag("CAN_GO_THROUGH"));
-        avoid.addAll(gameState.gameMap.getListEnemies());
+        
+        // Add traps
         avoid.addAll(gameState.gameMap.getListTraps());
         
-        // Add buffer zones around other players
+        // CRITICAL: Add NPC and player danger zones using our improved threat assessment
+        ThreatAssessment threatAssessment = new ThreatAssessment();
+        List<Node> dangerZones = threatAssessment.getImmediateThreats(gameState);
+        avoid.addAll(dangerZones);
+        
+        // Add direct enemy positions
+        avoid.addAll(gameState.gameMap.getListEnemies());
+        
+        // Add buffer zones around other players (1 cell buffer)
         for (Player otherPlayer : gameState.gameMap.getOtherPlayerInfo()) {
             if (otherPlayer.getHealth() > 0) {
-                avoid.add(otherPlayer);
+                avoid.add(otherPlayer); // Add the player position itself
+                
+                // Add 1-cell buffer around player
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dy = -1; dy <= 1; dy++) {
+                        if (dx == 0 && dy == 0) continue; // Skip center (already added)
+                        
+                        int bufferX = otherPlayer.getX() + dx;
+                        int bufferY = otherPlayer.getY() + dy;
+                        if (bufferX >= 0 && bufferX < gameState.gameMap.getMapSize() && 
+                            bufferY >= 0 && bufferY < gameState.gameMap.getMapSize()) {
+                            avoid.add(new Node(bufferX, bufferY));
+                        }
+                    }
+                }
             }
         }
         
+        System.out.println("Pathfinding avoiding " + avoid.size() + " dangerous cells (including " + dangerZones.size() + " NPC danger zones)");
         return avoid;
     }
     
-    private double calculatePositionSafety(Node position, GameState gameState) {
+    private double calculatePositionSafety(Node start, GameState gameState) {
         double safety = 100.0;
         
         // Penalty for being near threats
         for (Node threat : gameState.gameMap.getListEnemies()) {
-            int distance = PathUtils.distance(position, threat);
+            int distance = PathUtils.distance(start, threat);
             safety -= Math.max(0, 50 - distance * 5);
         }
         
         for (Player otherPlayer : gameState.gameMap.getOtherPlayerInfo()) {
             if (otherPlayer.getHealth() > 0) {
-                int distance = PathUtils.distance(position, otherPlayer);
+                int distance = PathUtils.distance(start, otherPlayer);
                 safety -= Math.max(0, 40 - distance * 4);
             }
         }
         
         // Bonus for being in safe zone
-        if (PathUtils.checkInsideSafeArea(position, gameState.gameMap.getSafeZone(), gameState.gameMap.getMapSize())) {
+        if (PathUtils.checkInsideSafeArea(start, gameState.gameMap.getSafeZone(), gameState.gameMap.getMapSize())) {
             safety += 20;
         }
         
@@ -1132,20 +1569,64 @@ class DecisionEngine {
     private static final int COMBAT_RANGE = 8;
     
     public static DecisionType analyzeGameState(GameState gameState) {
-        // Multi-criteria decision analysis
+        // Multi-criteria decision analysis with game-specific tactics
         double survivalScore = calculateSurvivalScore(gameState);
         double combatScore = calculateCombatScore(gameState);
         double resourceScore = calculateResourceScore(gameState);
         double positionScore = calculatePositionScore(gameState);
+        double dragonEggScore = calculateDragonEggThreat(gameState);
+        double killStreakOpportunity = calculateKillStreakOpportunity(gameState);
         
-        // Weight the scores based on game phase
-        double gamePhase = calculateGamePhase(gameState);
+        System.out.println("Decision Analysis - Survival: " + survivalScore + 
+                          ", Combat: " + combatScore + 
+                          ", Resource: " + resourceScore + 
+                          ", Position: " + positionScore +
+                          ", DragonEgg: " + dragonEggScore +
+                          ", KillStreak: " + killStreakOpportunity);
         
-        if (survivalScore < 0.3) return DecisionType.EMERGENCY_SURVIVAL;
-        if (combatScore > 0.7 && survivalScore > 0.5) return DecisionType.AGGRESSIVE_COMBAT;
-        if (resourceScore > 0.6) return DecisionType.RESOURCE_GATHERING;
-        if (positionScore < 0.4) return DecisionType.REPOSITIONING;
+        // Dragon Egg Threat - Highest Priority (avoid instant death)
+        if (dragonEggScore > 0.8) {
+            System.out.println("Decision: EMERGENCY_DRAGON_EGG_AVOIDANCE");
+            return DecisionType.EMERGENCY_SURVIVAL;
+        }
         
+        // Late-game survival prioritization (last 45 seconds = no respawn)
+        if (isLateGame(gameState) && survivalScore < 0.6) {
+            System.out.println("Decision: LATE_GAME_SURVIVAL");
+            return DecisionType.EMERGENCY_SURVIVAL;
+        }
+        
+        // Kill streak opportunity - high scoring potential
+        if (killStreakOpportunity > 0.7 && survivalScore > 0.4) {
+            System.out.println("Decision: KILL_STREAK_HUNTING");
+            return DecisionType.AGGRESSIVE_COMBAT;
+        }
+        
+        // Emergency survival - dark zone or critical health
+        if (survivalScore < 0.3) {
+            System.out.println("Decision: EMERGENCY_SURVIVAL");
+            return DecisionType.EMERGENCY_SURVIVAL;
+        }
+        
+        // Combat when well-equipped and healthy
+        if (combatScore > 0.6 && survivalScore > 0.5) {
+            System.out.println("Decision: AGGRESSIVE_COMBAT");
+            return DecisionType.AGGRESSIVE_COMBAT;
+        }
+        
+        // Prioritize high-value resources (Dragon Eggs, Premium Weapons)
+        if (resourceScore > 0.25) {
+            System.out.println("Decision: RESOURCE_GATHERING (targeting valuable loot!)");
+            return DecisionType.RESOURCE_GATHERING;
+        }
+        
+        // Positioning for tactical advantage
+        if (positionScore < 0.4) {
+            System.out.println("Decision: REPOSITIONING");
+            return DecisionType.REPOSITIONING;
+        }
+        
+        System.out.println("Decision: EXPLORATION");
         return DecisionType.EXPLORATION;
     }
     
@@ -1191,27 +1672,110 @@ class DecisionEngine {
     
     private static double calculateResourceScore(GameState gameState) {
         double score = 0.0;
-        
-        // Check nearby valuable resources
         Node playerPos = gameState.player;
         
+        // DRAGON EGG - HIGHEST VALUE (premium items: MACE, COMPASS)
+        for (Obstacle chest : gameState.gameMap.getListChests()) {
+            double distance = PathUtils.distance(playerPos, chest);
+            if (distance <= 15) {
+                double chestValue;
+                if (chest.getId().equals("DRAGON_EGG")) {
+                    chestValue = 500.0; // Extremely high value - contains premium items
+                } else if (chest.getId().equals("CHEST")) {
+                    chestValue = 200.0; // High value but less than dragon egg
+                } else {
+                    chestValue = 150.0; // Standard chest value
+                }
+                
+                double chestScore = chestValue / Math.max(1, distance);
+                score += chestScore / 100.0;
+                System.out.println("Chest " + chest.getId() + " contributes " + (chestScore/100.0) + " to resource score");
+            }
+        }
+        
+        // PREMIUM WEAPONS (from game design documents)
         for (Weapon weapon : gameState.gameMap.getListWeapons()) {
             double distance = PathUtils.distance(playerPos, weapon);
             if (distance <= 10) {
-                double value = weapon.getPickupPoints() / Math.max(1, distance);
-                score += value / 100.0;
+                double weaponValue = calculateWeaponValue(weapon);
+                double weaponScore = weaponValue / Math.max(1, distance);
+                score += weaponScore / 100.0;
             }
         }
         
+        // PREMIUM HEALING/SUPPORTING ITEMS
         for (HealingItem healing : gameState.gameMap.getListHealingItems()) {
             double distance = PathUtils.distance(playerPos, healing);
             if (distance <= 8 && gameState.inventory.getListHealingItem().size() < 5) {
-                double value = healing.getPoint() / Math.max(1, distance);
-                score += value / 50.0;
+                double healingValue = calculateHealingValue(healing);
+                double healingScore = healingValue / Math.max(1, distance);
+                score += healingScore / 50.0;
             }
         }
         
+        // ARMOR with damage reduction
+        for (Armor armor : gameState.gameMap.getListArmors()) {
+            double distance = PathUtils.distance(playerPos, armor);
+            if (distance <= 8) {
+                double armorValue = calculateArmorValue(armor);
+                double armorScore = armorValue / Math.max(1, distance);
+                score += armorScore / 75.0;
+            }
+        }
+        
+        System.out.println("Total resource score: " + score);
         return Math.min(1.0, score);
+    }
+    
+    private static double calculateWeaponValue(Weapon weapon) {
+        // Premium weapons based on game design documents
+        switch (weapon.getId()) {
+            case "MACE": return 300.0; // Premium thính item, AoE stun
+            case "SAHUR_BAT": return 250.0; // Knock back special weapon
+            case "ROPE": return 200.0; // Pull mechanic special weapon
+            case "BELL": return 200.0; // Reverse effect special weapon
+            case "SHOTGUN": return 180.0; // High damage gun
+            case "AXE": return 150.0; // High damage melee
+            case "CROSSBOW": return 140.0; // Good range gun
+            case "SCEPTER": return 130.0; // Magic weapon
+            case "CRYSTAL": return 120.0; // High damage throwable
+            case "METEORITE_FRAGMENT": return 110.0; // Good throwable
+            case "KNIFE": return 100.0; // Decent melee
+            case "SEED": return 90.0; // Stun throwable
+            case "BANANA": return 80.0; // Trap creation
+            case "SMOKE": return 70.0; // Stealth/blind
+            case "BONE": return 60.0; // Basic melee
+            case "RUBBER_GUN": return 50.0; // Basic gun
+            case "TREE_BRANCH": return 30.0; // Weak melee
+            default: return weapon.getPickupPoints(); // Fallback to pickup points
+        }
+    }
+    
+    private static double calculateHealingValue(HealingItem healing) {
+        // Premium healing items based on game design documents
+        switch (healing.getId()) {
+            case "ELIXIR_OF_LIFE": return 500.0; // Revival effect - extremely valuable
+            case "COMPASS": return 400.0; // AoE stun - premium thính item
+            case "ELIXIR": return 300.0; // Control immunity
+            case "MAGIC": return 250.0; // Invisibility
+            case "UNICORN_BLOOD": return 200.0; // High HP healing
+            case "PHOENIX_FEATHERS": return 150.0; // Good HP healing
+            case "MERMAID_TAIL": return 100.0; // Medium HP healing
+            case "SPIRIT_TEAR": return 75.0; // Low-medium HP healing
+            case "GOD_LEAF": return 50.0; // Basic HP healing
+            default: return healing.getPoint(); // Fallback to point value
+        }
+    }
+    
+    private static double calculateArmorValue(Armor armor) {
+        // Armor value based on HP and damage reduction
+        switch (armor.getId()) {
+            case "MAGIC_ARMOR": return 200.0; // 75 HP, 30% reduction
+            case "MAGIC_HELMET": return 150.0; // 50 HP, 20% reduction
+            case "ARMOR": return 120.0; // 50 HP, 20% reduction
+            case "WOODEN_HELMET": return 80.0; // 20 HP, 5% reduction
+            default: return armor.getHealthPoint(); // Fallback to HP value
+        }
     }
     
     private static double calculatePositionScore(GameState gameState) {
@@ -1268,6 +1832,69 @@ class DecisionEngine {
         }
         
         return Math.min(1.0, threat);
+    }
+    
+    private static double calculateDragonEggThreat(GameState gameState) {
+        // Check if dragon is flying (indicates dragon egg will drop soon)
+        // This is critical to avoid instant death
+        // TODO: Implement dragon detection logic when available in SDK
+        // For now, return 0 (no immediate threat)
+        return 0.0;
+    }
+    
+    private static double calculateKillStreakOpportunity(GameState gameState) {
+        double opportunity = 0.0;
+        
+        // Check for nearby vulnerable enemies
+        List<Player> enemies = gameState.getNearbyEnemies();
+        for (Player enemy : enemies) {
+            // Prioritize low-health enemies for easy kills
+            if (enemy.getHealth() < 30) {
+                opportunity += 0.3;
+            }
+            
+            // Check if we have weapon advantage
+            if (gameState.inventory.getGun() != null && 
+                PathUtils.distance(gameState.player, enemy) <= 8) {
+                opportunity += 0.2;
+            }
+            
+            // Melee advantage at close range
+            if (gameState.inventory.getMelee() != null && 
+                !gameState.inventory.getMelee().getId().equals("HAND") &&
+                PathUtils.distance(gameState.player, enemy) <= 3) {
+                opportunity += 0.3;
+            }
+        }
+        
+        // Our health factor - don't engage if too low
+        opportunity *= (gameState.player.getHealth() / 100.0);
+        
+        return Math.min(1.0, opportunity);
+    }
+    
+    private static boolean isLateGame(GameState gameState) {
+        // Determine if we're in the last 45 seconds (no respawn period)
+        // TODO: Add game time tracking when available in SDK
+        // For now, use enemy count as proxy
+        int enemyCount = gameState.gameMap.getOtherPlayerInfo().size();
+        return enemyCount <= 3; // Likely late game with few players left
+    }
+    
+    private static double calculateTimeBasedScore(GameState gameState) {
+        // Calculate score based on game time and phase
+        int enemyCount = gameState.gameMap.getOtherPlayerInfo().size();
+        
+        if (enemyCount <= 2) {
+            // Very late game - survival is paramount
+            return 0.9;
+        } else if (enemyCount <= 4) {
+            // Late game - be more cautious
+            return 0.7;
+        } else {
+            // Early/mid game - more aggressive
+            return 0.3;
+        }
     }
     
     enum DecisionType {
@@ -1340,11 +1967,49 @@ class StrategicPlanner {
         Player target = selectBestCombatTarget(gameState);
         if (target != null) {
             String direction = calculateDirection(gameState.player, target);
-            String weaponChoice = selectBestWeapon(gameState, target);
+            String weaponChoice = selectOptimalWeaponForTarget(gameState, target);
             
-            actions.add("attack:" + weaponChoice + ":" + direction);
+            // Advanced combat tactics
+            int distance = PathUtils.distance(gameState.player, target);
             
-            // Plan follow-up actions
+            // Kiting strategy for ranged weapons
+           
+            if (weaponChoice.equals("gun") && distance <= 2) {
+                // Too close for guns - retreat while shooting
+                String retreatDirection = getRetreatDirection(gameState, target);
+                actions.add("move:" + retreatDirection);
+                actions.add("attack:" + weaponChoice + ":" + direction);
+            }
+            // Special weapon tactics
+            else if (weaponChoice.equals("special")) {
+                String specialWeaponId = gameState.inventory.getSpecial().getId();
+                switch (specialWeaponId) {
+                    case "ROPE":
+                        // Pull enemy closer for melee follow-up
+                        actions.add("attack:special:" + direction);
+                        if (gameState.inventory.getMelee() != null) {
+                            actions.add("attack:melee:" + direction);
+                        }
+                        break;
+                    case "SAHUR_BAT":
+                        // Knock back - position near obstacles for stun
+                        actions.add("attack:special:" + direction);
+                        break;
+                    case "BELL":
+                        // Reverse controls in AoE
+                        actions.add("attack:special:" + direction);
+                        break;
+                    default:
+                        actions.add("attack:" + weaponChoice + ":" + direction);
+                        break;
+                }
+            }
+            // Standard attack
+            else {
+                actions.add("attack:" + weaponChoice + ":" + direction);
+            }
+            
+            // Plan follow-up positioning
             String repositionMove = planCombatRepositioning(gameState, target);
             if (repositionMove != null) {
                 actions.add("move:" + repositionMove);
@@ -1354,9 +2019,101 @@ class StrategicPlanner {
         return actions;
     }
     
+    private static String selectOptimalWeaponForTarget(GameState gameState, Player target) {
+        int distance = PathUtils.distance(gameState.player, target);
+        
+        // Special weapons have unique tactical advantages
+        if (gameState.inventory.getSpecial() != null) {
+            String specialId = gameState.inventory.getSpecial().getId();
+            switch (specialId) {
+                case "MACE":
+                    if (distance <= 3) return "special"; // AoE stun attack
+                    break;
+                case "ROPE":
+                    if (distance <= 6) return "special"; // Pull + stun combo
+                    break;
+                case "SAHUR_BAT":
+                    if (distance <= 5) return "special"; // Knock back + potential stun
+                    break;
+                case "BELL":
+                    if (distance <= 7) return "special"; // AoE reverse controls
+                    break;
+            }
+        }
+        
+        // Gun tactics - medium to long range
+        if (gameState.inventory.getGun() != null && distance >= 3 && distance <= 8) {
+            return "gun";
+        }
+        
+        // Throwable tactics - can cause area effects
+        if (gameState.inventory.getThrowable() != null && distance >= 2 && distance <= 6) {
+            String throwableId = gameState.inventory.getThrowable().getId();
+            switch (throwableId) {
+                case "SEED":
+                    return "throwable"; // Stun effect
+                case "SMOKE":
+                    return "throwable"; // Blind + invisibility
+                case "BANANA":
+                    return "throwable"; // Creates trap
+                default:
+                    if (distance >= 4) return "throwable"; // Safe distance for explosives
+                    break;
+            }
+        }
+        
+        // Melee for close combat
+        if (gameState.inventory.getMelee() != null && distance <= 3) {
+            return "melee";
+        }
+        
+        return "melee"; // Default fallback
+    }
+    
+    private static String getRetreatDirection(GameState gameState, Player target) {
+        int dx = gameState.player.getX() - target.getX();
+        int dy = gameState.player.getY() - target.getY();
+        
+        // Move away from target
+        if (Math.abs(dx) > Math.abs(dy)) {
+            return dx > 0 ? "r" : "l";
+        } else {
+            return dy > 0 ? "u" : "d";
+        }
+    }
+    
     private static List<String> planResourceGathering(GameState gameState) {
         List<String> actions = new ArrayList<>();
         
+        // Check for nearby chests to attack first - this is HIGH PRIORITY
+        Obstacle nearbyChest = findNearbyChest(gameState);
+        if (nearbyChest != null) {
+            int distance = PathUtils.distance(gameState.player, nearbyChest);
+            String weaponChoice = selectBestWeaponForChest(gameState);
+            int weaponRange = getWeaponRange(gameState, weaponChoice);
+            
+            System.out.println("Found nearby chest: " + nearbyChest.getId() + " at distance " + distance + 
+                             ", selected weapon: " + weaponChoice + " (range: " + weaponRange + ")");
+            
+            if (distance <= weaponRange) {
+                // Attack chest directly - we're within weapon range
+                String direction = calculateDirection(gameState.player, nearbyChest);
+                actions.add("attack:" + weaponChoice + ":" + direction);
+                System.out.println("Planning to attack chest with " + weaponChoice + " in direction " + direction);
+                return actions;
+            } else if (distance <= 10) {
+                // Move closer to chest - it's our priority target
+                String path = PathUtils.getShortestPath(gameState.gameMap, 
+                    generateObstacleList(gameState), gameState.player, nearbyChest, false);
+                if (path != null && !path.isEmpty()) {
+                    actions.add("move:" + path.substring(0, 1));
+                    System.out.println("Moving towards chest: " + path.substring(0, 1) + " (need to get within range " + weaponRange + ")");
+                    return actions;
+                }
+            }
+        }
+        
+        // If no chests nearby, look for other resources
         Node bestResource = findHighValueResource(gameState);
         if (bestResource != null) {
             String path = PathUtils.getShortestPath(gameState.gameMap, 
@@ -1371,9 +2128,74 @@ class StrategicPlanner {
         return actions;
     }
     
+    private static Obstacle findNearbyChest(GameState gameState) {
+        List<Obstacle> chests = gameState.gameMap.getListChests();
+        Obstacle bestChest = null;
+        int minDistance = Integer.MAX_VALUE;
+        
+        System.out.println("Searching for chests. Total chests available: " + chests.size());
+        
+        for (Obstacle chest : chests) {
+            int distance = PathUtils.distance(gameState.player, chest);
+            System.out.println("Chest " + chest.getId() + " at (" + chest.getX() + "," + chest.getY() + "), distance: " + distance);
+            
+            if (distance <= 15 && distance < minDistance) { // Increased search range
+                minDistance = distance;
+                bestChest = chest;
+                System.out.println("Selected as best chest candidate: " + chest.getId() + " at distance " + distance);
+            }
+        }
+        
+        if (bestChest != null) {
+            System.out.println("Best chest found: " + bestChest.getId() + " at distance " + minDistance);
+        } else {
+            System.out.println("No suitable chest found within range");
+        }
+        
+        return bestChest;
+    }
+    
+    private static String selectBestWeaponForChest(GameState gameState) {
+        // For chests, prefer weapons with good damage
+        if (gameState.inventory.getMelee() != null && 
+            !gameState.inventory.getMelee().getId().equals("HAND")) {
+            // Use melee weapons for close-range chest breaking
+            String meleeId = gameState.inventory.getMelee().getId();
+            if (meleeId.equals("AXE") || meleeId.equals("KNIFE") || meleeId.equals("BONE")) {
+                return "melee";
+            }
+        }
+        
+        if (gameState.inventory.getGun() != null) {
+            return "gun";
+        }
+        
+        if (gameState.inventory.getThrowable() != null) {
+            return "throwable";
+        }
+        
+        return "melee"; // Use hand as last resort
+    }
+    
     private static List<String> planRepositioning(GameState gameState) {
         List<String> actions = new ArrayList<>();
         
+        // Priority 1: Get to safe zone if in dark zone
+        if (!PathUtils.checkInsideSafeArea(gameState.player, gameState.gameMap.getSafeZone(), gameState.gameMap.getMapSize())) {
+            Node safePosition = findOptimalSafeZonePosition(gameState);
+            if (safePosition != null) {
+                String path = PathUtils.getShortestPath(gameState.gameMap, 
+                    generateObstacleList(gameState), gameState.player, safePosition, false);
+                
+                if (path != null && !path.isEmpty()) {
+                    actions.add("move:" + path.substring(0, 1));
+                    System.out.println("Emergency move to safe zone: " + path.substring(0, 1));
+                    return actions;
+                }
+            }
+        }
+        
+        // Priority 2: Position near valuable resources but maintain safety
         Node strategicPosition = findStrategicPosition(gameState);
         if (strategicPosition != null) {
             String path = PathUtils.getShortestPath(gameState.gameMap, 
@@ -1385,6 +2207,130 @@ class StrategicPlanner {
         }
         
         return actions;
+    }
+    
+    private static Node findOptimalSafeZonePosition(GameState gameState) {
+        // Find the best position within the safe zone
+        int mapSize = gameState.gameMap.getMapSize();
+        int safeZone = gameState.gameMap.getSafeZone();
+        
+        // Position slightly inside safe zone boundary for buffer
+        int bufferDistance = Math.max(2, safeZone / 10); // 10% buffer or minimum 2 cells
+        int targetRadius = safeZone - bufferDistance;
+        
+        // Prefer center of safe zone for maximum safety
+        int centerX = mapSize / 2;
+        int centerY = mapSize / 2;
+        
+        return new Node(centerX, centerY);
+    }
+    
+    private static Node findStrategicPosition(GameState gameState) {
+        // Advanced positioning strategy
+        Node bestPosition = null;
+        double bestScore = -1;
+        
+        int mapSize = gameState.gameMap.getMapSize();
+        int searchRadius = Math.min(10, mapSize / 4);
+        
+        // Search in a radius around current position
+        for (int dx = -searchRadius; dx <= searchRadius; dx++) {
+            for (int dy = -searchRadius; dy <= searchRadius; dy++) {
+                int newX = gameState.player.getX() + dx;
+                int newY = gameState.player.getY() + dy;
+                
+                // Check bounds
+                if (newX < 0 || newX >= mapSize || newY < 0 || newY >= mapSize) {
+                    continue;
+                }
+                
+                Node candidate = new Node(newX, newY);
+                double score = calculatePositionScore(candidate, gameState);
+                
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestPosition = candidate;
+                }
+            }
+        }
+        
+        return bestPosition;
+    }
+    
+    private static double calculatePositionScore(Node position, GameState gameState) {
+        double score = 0.0;
+        
+        // Safe zone factor (most important)
+        if (PathUtils.checkInsideSafeArea(position, gameState.gameMap.getSafeZone(), gameState.gameMap.getMapSize())) {
+            score += 50.0;
+        } else {
+            return 0.0; // Never go outside safe zone unless already there
+        }
+        
+        // Distance to valuable resources
+        for (Obstacle chest : gameState.gameMap.getListChests()) {
+            int distance = PathUtils.distance(position, chest);
+            if (distance <= 8) {
+                double chestValue = chest.getId().equals("DRAGON_EGG") ? 30.0 : 20.0;
+                score += chestValue / Math.max(1, distance);
+            }
+        }
+        
+        // Distance from enemies (safety)
+        for (Player enemy : gameState.gameMap.getOtherPlayerInfo()) {
+            if (enemy.getHealth() > 0) {
+                int distance = PathUtils.distance(position, enemy);
+                if (distance <= 3) {
+                    score -= 20.0; // Too close to enemy
+                } else if (distance <= 6) {
+                    score += 5.0; // Good engagement distance
+                } else {
+                    score += 2.0; // Safe distance
+                }
+            }
+        }
+        
+        // Cover and tactical advantage
+        score += calculateCoverScore(position, gameState);
+        
+        return score;
+    }
+    
+    private static double calculateCoverScore(Node position, GameState gameState) {
+        double coverScore = 0.0;
+        
+        // Count nearby obstacles that can provide cover
+        int coverCount = 0;
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dy = -2; dy <= 2; dy++) {
+                if (dx == 0 && dy == 0) continue;
+                
+                int checkX = position.getX() + dx;
+                int checkY = position.getY() + dy;
+                
+                // Check if there's an obstacle at this position
+                for (Obstacle obstacle : gameState.gameMap.getListObstacles()) {
+                    if (obstacle.getX() == checkX && obstacle.getY() == checkY) {
+                        // Prefer destructible cover (can be cleared) over indestructible
+                        if (obstacle.getId().equals("CHEST") || obstacle.getId().equals("DRAGON_EGG")) {
+                            coverCount += 2; // Chests provide valuable cover
+                        } else {
+                            coverCount += 1;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Optimal cover is 2-4 nearby obstacles
+        if (coverCount >= 2 && coverCount <= 4) {
+            coverScore = 10.0;
+        } else if (coverCount >= 1) {
+            coverScore = 5.0;
+        }
+        
+        return coverScore;
     }
     
     private static List<String> planExploration(GameState gameState) {
@@ -1538,33 +2484,6 @@ class StrategicPlanner {
         return bestResource;
     }
     
-    private static Node findStrategicPosition(GameState gameState) {
-        int mapSize = gameState.gameMap.getMapSize();
-        int safeZone = gameState.gameMap.getSafeZone();
-        
-        // Find position that maximizes safety and strategic value
-        Node bestPosition = null;
-        double bestScore = -1;
-        
-        for (int x = Math.max(0, gameState.player.getX() - 5); 
-             x <= Math.min(mapSize - 1, gameState.player.getX() + 5); x++) {
-            for (int y = Math.max(0, gameState.player.getY() - 5); 
-                 y <= Math.min(mapSize - 1, gameState.player.getY() + 5); y++) {
-                
-                Node candidate = new Node(x, y);
-                if (PathUtils.checkInsideSafeArea(candidate, safeZone, mapSize)) {
-                    double score = calculatePositionStrategicValue(candidate, gameState);
-                    if (score > bestScore) {
-                        bestScore = score;
-                        bestPosition = candidate;
-                    }
-                }
-            }
-        }
-        
-        return bestPosition;
-    }
-    
     private static double calculatePositionStrategicValue(Node position, GameState gameState) {
         double score = 0;
         
@@ -1600,17 +2519,133 @@ class StrategicPlanner {
     
     private static List<Node> generateObstacleList(GameState gameState) {
         List<Node> obstacles = new ArrayList<>();
-        obstacles.addAll(gameState.gameMap.getListIndestructibles());
-        obstacles.removeAll(gameState.gameMap.getObstaclesByTag("CAN_GO_THROUGH"));
-        obstacles.addAll(gameState.gameMap.getListEnemies());
         
-        // Add buffer around other players
+        // Add all indestructible obstacles (except those we can go through)
+        for (Obstacle obstacle : gameState.gameMap.getListObstacles()) {
+            // Skip destructible obstacles (chests) as they can be attacked
+            if (!obstacle.getId().equals("CHEST") && !obstacle.getId().equals("DRAGON_EGG")) {
+                obstacles.add(obstacle);
+            }
+        }
+        
+        // Remove obstacles we can pass through
+        obstacles.removeAll(gameState.gameMap.getObstaclesByTag("CAN_GO_THROUGH"));
+        
+        // CRITICAL: Add NPC danger zones based on their attack ranges and movement patterns
+        ThreatAssessment threatAssessment = new ThreatAssessment();
+        List<Node> npcDangerZones = threatAssessment.getImmediateThreats(gameState);
+        obstacles.addAll(npcDangerZones);
+        
+        // Add enemy players as obstacles for pathfinding
         for (Player enemy : gameState.gameMap.getOtherPlayerInfo()) {
             if (enemy.getHealth() > 0) {
                 obstacles.add(enemy);
             }
         }
         
+        // Add traps
+        obstacles.addAll(gameState.gameMap.getListTraps());
+        
+        System.out.println("Strategic pathfinding using " + obstacles.size() + " obstacles (including " + npcDangerZones.size() + " NPC danger cells)");
         return obstacles;
+    }
+    
+    /**
+     * Get the range of a weapon based on its type
+     */
+    private static int getWeaponRange(GameState gameState, String weaponType) {
+        switch (weaponType) {
+            case "gun":
+                if (gameState.inventory.getGun() != null) {
+                    return getGunWeaponRangeStatic(gameState.inventory.getGun());
+                }
+                return 6; // Default gun range
+            case "melee":
+                if (gameState.inventory.getMelee() != null) {
+                    return getMeleeWeaponRangeStatic(gameState.inventory.getMelee());
+                }
+                return 1; // Default melee range
+            case "throwable":
+                if (gameState.inventory.getThrowable() != null) {
+                    return getThrowableWeaponRangeStatic(gameState.inventory.getThrowable());
+                }
+                return 5; // Default throwable range
+            case "special":
+                if (gameState.inventory.getSpecial() != null) {
+                    String specialId = gameState.inventory.getSpecial().getId();
+                    if ("ROPE".equals(specialId)) {
+                        return 6; // ROPE has 1*6 range
+                    } else {
+                        return 3; // Default special range
+                    }
+                }
+                return 3;
+            default:
+                return 1;
+        }
+    }
+    
+    /**
+     * Static version of getMeleeWeaponRange for use in static methods
+     */
+    private static int getMeleeWeaponRangeStatic(Weapon meleeWeapon) {
+        if (meleeWeapon == null) return 1;
+        
+        String weaponId = meleeWeapon.getId();
+        switch (weaponId) {
+            case "KNIFE":
+            case "TREE_BRANCH":
+            case "AXE":
+                return 3; // 3*1 range
+            case "MACE":
+                return 3; // 3*3 range (diagonal distance)
+            case "HAND":
+            case "BONE":
+                return 1; // 1*1 range
+            default:
+                return 2; // Default safe range for unknown weapons
+        }
+    }
+    
+    /**
+     * Static version of getGunWeaponRange for use in static methods
+     */
+    private static int getGunWeaponRangeStatic(Weapon gunWeapon) {
+        if (gunWeapon == null) return 6;
+        
+        String weaponId = gunWeapon.getId();
+        switch (weaponId) {
+            case "SCEPTER":
+                return 12; // 1*12 range
+            case "CROSSBOW":
+                return 8; // 1*8 range
+            case "RUBBER_GUN":
+                return 6; // 1*6 range
+            case "SHOTGUN":
+                return 2; // 1*2 range
+            default:
+                return 6; // Default gun range
+        }
+    }
+    
+    /**
+     * Static version of getThrowableWeaponRange for use in static methods
+     */
+    private static int getThrowableWeaponRangeStatic(Weapon throwableWeapon) {
+        if (throwableWeapon == null) return 5;
+        
+        String weaponId = throwableWeapon.getId();
+        switch (weaponId) {
+            case "BANANA":
+            case "METEORITE_FRAGMENT":
+            case "CRYSTAL":
+                return 6; // 1*6 range
+            case "SEED":
+                return 5; // 1*5 range
+            case "SMOKE":
+                return 3; // 1*3 range
+            default:
+                return 5; // Default throwable range
+        }
     }
 }
